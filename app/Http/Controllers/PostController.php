@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 
 class PostController extends Controller {
     public function index() {
-        $posts = Post::with('user')->paginate(10); // Only load user, not comments
+        $posts = Post::with('user')->orderBy('created_at', 'DESC')->paginate(10); // Latest posts first
         return response()->json($posts);
     }
 
@@ -23,7 +23,15 @@ class PostController extends Controller {
 
     public function show($id): JsonResponse
     {
-        $post = Post::with(['user', 'comments.user', 'likes'])->findOrFail($id);
+        $post = Post::with([
+            'user',
+            'comments' => function ($query) {
+                $query->with('user')->orderBy('created_at', 'DESC'); // Latest comments first
+            },
+            'likes'
+        ])->findOrFail($id);
+        $userId = auth('api')->id();
+
         return response()->json([
             'id' => $post->id,
             'title' => $post->title,
@@ -32,8 +40,9 @@ class PostController extends Controller {
             'created_at' => $post->created_at,
             'comments' => $post->comments,
             'likes' => $post->likes,
-            'like_count' => $post->likes()->count(), // Total likes
-            'comment_count' => $post->comments()->count(), // Total comments
+            'like_count' => $post->likes()->count(),
+            'comment_count' => $post->comments()->count(),
+            'liked_by_me' => $userId ? $post->likes()->where('user_id', $userId)->exists() : false,
         ]);
     }
 
@@ -67,6 +76,7 @@ class PostController extends Controller {
         $post->update($data);
         return response()->json($post);
     }
+
     public function myPosts(Request $request): JsonResponse
     {
         $posts = Post::where('user_id', auth()->id())
